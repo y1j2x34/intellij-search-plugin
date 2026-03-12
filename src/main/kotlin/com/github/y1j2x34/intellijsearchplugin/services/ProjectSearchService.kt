@@ -100,7 +100,7 @@ class ProjectSearchService(private val project: Project) {
             val allFiles = mutableListOf<VirtualFile>()
             FileBasedIndex.getInstance().processAllKeys(FilenameIndex.NAME, { filename ->
                 if (!indicator.isCanceled) {
-                    val files = FilenameIndex.getVirtualFilesByName(filename, scope, project)
+                    val files = FilenameIndex.getVirtualFilesByName(project, filename, options.matchCase, scope)
                     allFiles.addAll(files)
                 }
                 true

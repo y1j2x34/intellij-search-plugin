@@ -14,6 +14,7 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
 import com.intellij.util.ui.AnimatedIcon
 import com.intellij.util.ui.JBUI
+import com.intellij.util.ui.AsyncProcessIcon
 import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.GridBagConstraints
@@ -69,9 +70,8 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
             val gbc = GridBagConstraints()
             val innerPanel = JPanel(BorderLayout(0, JBUI.scale(8))).apply {
                 isOpaque = false
-                val spinnerIcon = AnimatedIcon.Default()
-                val iconLabel = JLabel(spinnerIcon, SwingConstants.CENTER)
-                add(iconLabel, BorderLayout.CENTER)
+                val spinnerIcon = AsyncProcessIcon("Searching")
+                add(spinnerIcon, BorderLayout.CENTER)
                 val textLabel = JLabel("Searching...", SwingConstants.CENTER).apply {
                     foreground = SimpleTextAttributes.GRAYED_ATTRIBUTES.fgColor
                 }
