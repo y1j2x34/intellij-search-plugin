@@ -1,15 +1,36 @@
 <!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
 <idea-plugin>
     <id>com.github.y1j2x34.intellijsearchplugin</id>
-    <name>intellij-search-plugin</name>
+    <name>Project Search</name>
     <vendor>y1j2x34</vendor>
 
     <depends>com.intellij.modules.platform</depends>
 
     <extensions defaultExtensionNs="com.intellij">
+        <!-- Services -->
         <applicationService serviceImplementation="com.github.y1j2x34.intellijsearchplugin.services.MyApplicationService"/>
         <projectService serviceImplementation="com.github.y1j2x34.intellijsearchplugin.services.MyProjectService"/>
+        <projectService serviceImplementation="com.github.y1j2x34.intellijsearchplugin.services.ProjectSearchService"/>
+        <projectService serviceImplementation="com.github.y1j2x34.intellijsearchplugin.services.ReplaceService"/>
+
+        <!-- Tool Window -->
+        <toolWindow id="Project Search"
+                    anchor="left"
+                    icon="AllIcons.Actions.Search"
+                    factoryClass="com.github.y1j2x34.intellijsearchplugin.ui.SearchToolWindowFactory"/>
     </extensions>
+
+    <actions>
+        <!-- Open Search Tool Window Action -->
+        <action id="com.github.y1j2x34.intellijsearchplugin.OpenSearchToolWindow"
+                class="com.github.y1j2x34.intellijsearchplugin.actions.OpenSearchToolWindowAction"
+                text="Open Project Search"
+                description="Open the project search tool window"
+                icon="AllIcons.Actions.Search">
+            <add-to-group group-id="MainMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
+        </action>
+    </actions>
 
     <applicationListeners>
         <listener class="com.github.y1j2x34.intellijsearchplugin.listeners.MyProjectManagerListener"
