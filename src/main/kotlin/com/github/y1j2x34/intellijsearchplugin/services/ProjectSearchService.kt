@@ -1,6 +1,7 @@
 package com.github.y1j2x34.intellijsearchplugin.services
 
 import com.github.y1j2x34.intellijsearchplugin.model.*
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.application.ReadAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.progress.ProgressIndicator
@@ -28,6 +29,7 @@ class ProjectSearchService(private val project: Project) {
 
     /**
      * 执行搜索（异步，带进度条）
+     * 注意：onProgress 和 onComplete 回调会在 EDT 上执行，可以安全地更新 UI
      */
     fun searchAsync(
         options: SearchOptions,
@@ -55,7 +57,10 @@ class ProjectSearchService(private val project: Project) {
                         if (fileResult != null && fileResult.matches.isNotEmpty()) {
                             results.add(fileResult)
                             totalMatches += fileResult.matchCount
-                            onProgress(fileResult)
+                            // 切换到 EDT 线程更新 UI
+                            ApplicationManager.getApplication().invokeLater {
+                                onProgress(fileResult)
+                            }
                         }
                     }
 
@@ -67,7 +72,10 @@ class ProjectSearchService(private val project: Project) {
                         totalMatches = totalMatches,
                         searchTimeMs = searchTime
                     )
-                    onComplete(searchResult)
+                    // 切换到 EDT 线程更新 UI
+                    ApplicationManager.getApplication().invokeLater {
+                        onComplete(searchResult)
+                    }
                 } catch (e: Exception) {
                     // 处理搜索异常
                     e.printStackTrace()

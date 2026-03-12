@@ -66,9 +66,15 @@ class SearchToolWindowPanel(private val project: Project) : JPanel(BorderLayout(
             currentResultCount = 0
             currentFileCount = 0
 
+            // 显示加载动画
+            searchResultsPanel.showLoading()
+
             searchService.searchAsync(
                 options = options,
                 onProgress = { fileResult ->
+                    // 收到第一个结果时切换到结果面板
+                    searchResultsPanel.hideLoading()
+
                     // 渐进式显示结果
                     searchResultsPanel.addFileResult(fileResult)
                     currentFileCount++
@@ -76,7 +82,8 @@ class SearchToolWindowPanel(private val project: Project) : JPanel(BorderLayout(
                     searchResultsPanel.updateSummary(currentResultCount, currentFileCount)
                 },
                 onComplete = { result ->
-                    // 搜索完成
+                    // 搜索完成，确保加载动画已隐藏
+                    searchResultsPanel.hideLoading()
                     lastSearchResult = result
                     searchResultsPanel.displaySearchResult(result)
                 }

@@ -12,12 +12,17 @@ import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
+import com.intellij.util.ui.AnimatedIcon
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
+import java.awt.CardLayout
+import java.awt.GridBagConstraints
+import java.awt.GridBagLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import javax.swing.JPanel
 import javax.swing.JLabel
+import javax.swing.SwingConstants
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
@@ -32,6 +37,14 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
     private val resultTree = Tree(treeModel)
     private val summaryLabel = JLabel("No results")
 
+    private val cardLayout = CardLayout()
+    private val contentPanel = JPanel(cardLayout)
+
+    companion object {
+        private const val CARD_RESULTS = "results"
+        private const val CARD_LOADING = "loading"
+    }
+
     init {
         setupUI()
         setupListeners()
@@ -44,13 +57,50 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
         summaryLabel.border = JBUI.Borders.empty(4)
         add(summaryLabel, BorderLayout.NORTH)
 
-        // 结果树
+        // 结果树面板
         resultTree.isRootVisible = false
         resultTree.showsRootHandles = true
         resultTree.cellRenderer = SearchResultTreeCellRenderer()
 
         val scrollPane = JBScrollPane(resultTree)
-        add(scrollPane, BorderLayout.CENTER)
+
+        // 加载动画面板
+        val loadingPanel = JPanel(GridBagLayout()).apply {
+            val gbc = GridBagConstraints()
+            val innerPanel = JPanel(BorderLayout(0, JBUI.scale(8))).apply {
+                isOpaque = false
+                val spinnerIcon = AnimatedIcon.Default()
+                val iconLabel = JLabel(spinnerIcon, SwingConstants.CENTER)
+                add(iconLabel, BorderLayout.CENTER)
+                val textLabel = JLabel("Searching...", SwingConstants.CENTER).apply {
+                    foreground = SimpleTextAttributes.GRAYED_ATTRIBUTES.fgColor
+                }
+                add(textLabel, BorderLayout.SOUTH)
+            }
+            add(innerPanel, gbc)
+        }
+
+        // 使用 CardLayout 切换结果面板和加载面板
+        contentPanel.add(scrollPane, CARD_RESULTS)
+        contentPanel.add(loadingPanel, CARD_LOADING)
+        cardLayout.show(contentPanel, CARD_RESULTS)
+
+        add(contentPanel, BorderLayout.CENTER)
+    }
+
+    /**
+     * 显示加载动画
+     */
+    fun showLoading() {
+        summaryLabel.text = "Searching..."
+        cardLayout.show(contentPanel, CARD_LOADING)
+    }
+
+    /**
+     * 隐藏加载动画，显示结果面板
+     */
+    fun hideLoading() {
+        cardLayout.show(contentPanel, CARD_RESULTS)
     }
 
     private fun setupListeners() {
