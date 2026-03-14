@@ -1,10 +1,8 @@
 package com.github.y1j2x34.intellijsearchplugin.ui
 
 import com.github.y1j2x34.intellijsearchplugin.model.SearchOptions
-import com.github.y1j2x34.intellijsearchplugin.model.SearchScope
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.JBColor
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBLabel
@@ -29,7 +27,6 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val wholeWordToggle = createOptionToggle("Ab", "Match Whole Word")
     private val regexToggle = createOptionToggle(".*", "Use Regex")
 
-    private val scopeComboBox = ComboBox(arrayOf("Project", "Module", "Directory"))
     private val includeField = JBTextField()
     private val excludeField = JBTextField()
 
@@ -114,9 +111,6 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
                 add(inner, BorderLayout.CENTER)
             }
         }
-
-        gbc.gridy++
-        mainPanel.add(optionRow("Scope:", scopeComboBox), gbc)
 
         gbc.gridy++
         includeField.toolTipText = "e.g., src/**, *.ts (comma separated)"
@@ -394,18 +388,11 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun buildSearchOptions(): SearchOptions {
-        val scope = when (scopeComboBox.selectedIndex) {
-            0 -> SearchScope.PROJECT
-            1 -> SearchScope.MODULE
-            2 -> SearchScope.DIRECTORY
-            else -> SearchScope.PROJECT
-        }
         return SearchOptions(
             query = searchField.text,
             matchCase = matchCaseToggle.isSelected,
             matchWholeWord = wholeWordToggle.isSelected,
             useRegex = regexToggle.isSelected,
-            searchScope = scope,
             includePatterns = includeField.text.split(",").map { it.trim() }.filter { it.isNotEmpty() },
             excludePatterns = excludeField.text.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         )
