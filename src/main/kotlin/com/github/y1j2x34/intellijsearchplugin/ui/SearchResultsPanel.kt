@@ -41,13 +41,18 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
     var onReplaceMatch: ((VirtualFile, LineMatch) -> Unit)? = null
     var onReplaceAllInFile: ((VirtualFile) -> Unit)? = null
 
+    // Remove/close callbacks
+    var onRemoveMatch: ((VirtualFile, LineMatch) -> Unit)? = null
+    var onRemoveFile: ((VirtualFile) -> Unit)? = null
+
     companion object {
         private const val CARD_RESULTS = "results"
         private const val CARD_LOADING = "loading"
-        // Width reserved for action buttons on the right side of each row
         private val BTN_SIZE get() = JBUI.scale(20)
         private val BTN_GAP get() = JBUI.scale(2)
         private val BTN_MARGIN get() = JBUI.scale(4)
+        // Total width for two buttons: [replace][gap][close][margin]
+        private val TWO_BTNS_WIDTH get() = BTN_MARGIN + BTN_SIZE + BTN_GAP + BTN_SIZE + BTN_MARGIN
     }
 
     init {
@@ -105,23 +110,23 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
                 val node = path.lastPathComponent as? DefaultMutableTreeNode ?: return
 
                 // Check if click landed on an action button
-                if (row >= 0 && (onReplaceMatch != null || onReplaceAllInFile != null)) {
-                    val cellRenderer = resultTree.cellRenderer
-                    val rendererComp = resultTree.getCellRenderer().getTreeCellRendererComponent(
-                        resultTree, path.lastPathComponent, false, false, false, row, false
-                    )
-                    val compWidth = rendererComp.preferredSize.width.coerceAtLeast(resultTree.width)
-                    val btnX = compWidth - BTN_MARGIN - BTN_SIZE
-                    if (e.x >= btnX && e.x <= btnX + BTN_SIZE) {
+                if (row >= 0) {
+                    val compWidth = resultTree.width
+                    // Close button: rightmost
+                    val closeX = compWidth - BTN_MARGIN - BTN_SIZE
+                    // Replace button: to the left of close
+                    val replaceX = closeX - BTN_GAP - BTN_SIZE
+
+                    if (e.x >= closeX && e.x <= closeX + BTN_SIZE) {
                         when (val userObject = node.userObject) {
-                            is FileResultNode -> {
-                                onReplaceAllInFile?.invoke(userObject.file)
-                                return
-                            }
-                            is LineMatchNode -> {
-                                onReplaceMatch?.invoke(userObject.file, userObject.lineMatch)
-                                return
-                            }
+                            is FileResultNode -> { onRemoveFile?.invoke(userObject.file); return }
+                            is LineMatchNode -> { onRemoveMatch?.invoke(userObject.file, userObject.lineMatch); return }
+                        }
+                    }
+                    if (e.x >= replaceX && e.x <= replaceX + BTN_SIZE) {
+                        when (val userObject = node.userObject) {
+                            is FileResultNode -> { onReplaceAllInFile?.invoke(userObject.file); return }
+                            is LineMatchNode -> { onReplaceMatch?.invoke(userObject.file, userObject.lineMatch); return }
                         }
                     }
                 }
@@ -209,7 +214,7 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
     private inner class SearchResultTreeCellRenderer : ColoredTreeCellRenderer() {
 
         private val replaceIcon = AllIcons.Actions.Replace
-        private val replaceAllIcon = AllIcons.Actions.Replace
+        private val closeIcon = AllIcons.Actions.Close
 
         override fun customizeCellRenderer(
             tree: javax.swing.JTree,
@@ -254,25 +259,25 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
 
             val row = getRowForThisComponent() ?: return
             if (row != hoveredRow) return
-            if (onReplaceMatch == null && onReplaceAllInFile == null) return
 
             val node = getNodeForRow(row) ?: return
             val userObject = node.userObject
 
             val btnY = (height - BTN_SIZE) / 2
-            val btnX = width - BTN_MARGIN - BTN_SIZE
+            val closeX = width - BTN_MARGIN - BTN_SIZE
+            val replaceX = closeX - BTN_GAP - BTN_SIZE
 
             val g2 = g as Graphics2D
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
 
             when (userObject) {
                 is FileResultNode -> {
-                    // "Replace All in File" button
-                    paintActionButton(g2, replaceAllIcon, btnX, btnY)
+                    paintActionButton(g2, replaceIcon, replaceX, btnY)
+                    paintActionButton(g2, closeIcon, closeX, btnY)
                 }
                 is LineMatchNode -> {
-                    // "Replace" button
-                    paintActionButton(g2, replaceIcon, btnX, btnY)
+                    paintActionButton(g2, replaceIcon, replaceX, btnY)
+                    paintActionButton(g2, closeIcon, closeX, btnY)
                 }
             }
         }

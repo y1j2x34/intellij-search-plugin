@@ -44,12 +44,12 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val matchCaseToggle = createOptionToggle("Aa", "Match Case")
     private val wholeWordToggle = createOptionToggle("Ab", "Match Whole Word")
     private val regexToggle = createOptionToggle(".*", "Use Regex")
+    private val preserveCaseToggle = createOptionToggle("aB", "Preserve Case")
 
     private val includeField = PlaceholderTextField("e.g. src/**, *.ts")
     private val excludeField = PlaceholderTextField("e.g. **/node_modules/**")
-
-    private val replaceButton = JButton("Replace", AllIcons.Actions.Replace)
-    private val replaceAllButton = JButton("Replace All")
+    private val openEditorsToggle = createOptionToggle("⊞", "Search Only in Open Editors")
+    private val useExcludeSettingsToggle = createOptionToggle("◎", "Use Exclude Settings and Ignore Files").apply { isSelected = true }
 
     // VS Code 风格：左侧展开箭头
     private val toggleArrowButton = createArrowButton()
@@ -131,11 +131,11 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
 
         gbc.gridy++
-        mainPanel.add(optionRow("Include:", includeField), gbc)
+        mainPanel.add(optionRow("Include:", createFieldWithToggle(includeField, openEditorsToggle)), gbc)
 
         gbc.gridy++
         excludeField.text = "**/node_modules/**, **/dist/**, **/build/**"
-        mainPanel.add(optionRow("Exclude:", excludeField), gbc)
+        mainPanel.add(optionRow("Exclude:", createFieldWithToggle(excludeField, useExcludeSettingsToggle)), gbc)
 
         add(mainPanel, BorderLayout.NORTH)
     }
@@ -234,7 +234,8 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     /**
-     * 替换输入框 + 右侧 Replace / Replace All 按钮
+     * 替换输入框（内含 Preserve Case 切换）+ 右侧 Replace All 按钮
+     * Layout: [wrapper: replaceField + preserveCaseToggle] [replaceAllBtn]
      */
     private fun createReplaceFieldWithButtons(): JComponent {
         val borderColor = JBColor.border()
@@ -261,24 +262,66 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
             }
         })
 
-        // Replace / Replace All 图标按钮
-        val replaceIconBtn = createIconActionButton(AllIcons.Actions.Replace, "Replace (Enter)")
-        val replaceAllIconBtn = createIconActionButton(AllIcons.Actions.Replace, "Replace All")
-
-        replaceIconBtn.addActionListener { triggerReplace() }
-        replaceAllIconBtn.addActionListener { triggerReplaceAll() }
-
-        val btnsPanel = JPanel().apply {
+        // Preserve Case toggle inside the wrapper (right side)
+        val innerToggles = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             isOpaque = false
             border = JBUI.Borders.empty(2, 0, 2, 4)
-            add(replaceIconBtn)
-            add(Box.createHorizontalStrut(JBUI.scale(1)))
+            add(preserveCaseToggle)
+        }
+        wrapper.add(replaceField, BorderLayout.CENTER)
+        wrapper.add(innerToggles, BorderLayout.EAST)
+
+        // Replace All button outside the wrapper
+        val replaceAllIconBtn = createIconActionButton(AllIcons.Actions.Replace, "Replace All")
+        replaceAllIconBtn.addActionListener { triggerReplaceAll() }
+
+        val row = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            add(wrapper)
+            add(Box.createHorizontalStrut(JBUI.scale(2)))
             add(replaceAllIconBtn)
         }
+        return row
+    }
 
-        wrapper.add(replaceField, BorderLayout.CENTER)
-        wrapper.add(btnsPanel, BorderLayout.EAST)
+    /**
+     * Wraps a text field with a bordered wrapper and places a toggle button inside on the right.
+     */
+    private fun createFieldWithToggle(field: JBTextField, toggle: JToggleButton): JComponent {
+        val borderColor = JBColor.border()
+        val focusColor = UIManager.getColor("Component.focusColor")
+            ?: JBColor(Color(0x3d, 0x98, 0xf5), Color(0x35, 0x92, 0xC4))
+
+        val wrapper = object : JPanel(BorderLayout(0, 0)) {
+            override fun getBackground(): Color = field.background
+        }
+        wrapper.isOpaque = true
+        wrapper.border = JBUI.Borders.customLine(borderColor, 1)
+
+        field.border = JBUI.Borders.empty(2, 6)
+        field.isOpaque = false
+
+        field.addFocusListener(object : FocusAdapter() {
+            override fun focusGained(e: FocusEvent) {
+                wrapper.border = JBUI.Borders.customLine(focusColor, 1)
+                wrapper.repaint()
+            }
+            override fun focusLost(e: FocusEvent) {
+                wrapper.border = JBUI.Borders.customLine(borderColor, 1)
+                wrapper.repaint()
+            }
+        })
+
+        val togglePanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            border = JBUI.Borders.empty(2, 0, 2, 4)
+            add(toggle)
+        }
+        wrapper.add(field, BorderLayout.CENTER)
+        wrapper.add(togglePanel, BorderLayout.EAST)
         return wrapper
     }
 
@@ -395,9 +438,6 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
         excludeField.addKeyListener(enterKeyListener)
 
         toggleArrowButton.addActionListener { toggleReplaceMode() }
-
-        replaceButton.addActionListener { triggerReplace() }
-        replaceAllButton.addActionListener { triggerReplaceAll() }
     }
 
     fun toggleReplaceMode() {
@@ -432,8 +472,11 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
             matchCase = matchCaseToggle.isSelected,
             matchWholeWord = wholeWordToggle.isSelected,
             useRegex = regexToggle.isSelected,
+            preserveCase = preserveCaseToggle.isSelected,
             includePatterns = includeField.text.split(",").map { it.trim() }.filter { it.isNotEmpty() },
-            excludePatterns = excludeField.text.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+            excludePatterns = excludeField.text.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+            searchOnlyInOpenEditors = openEditorsToggle.isSelected,
+            useExcludeSettings = useExcludeSettingsToggle.isSelected
         )
     }
 

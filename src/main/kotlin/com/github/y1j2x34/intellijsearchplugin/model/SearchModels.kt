@@ -10,10 +10,13 @@ data class SearchOptions(
     val matchCase: Boolean = false,
     val matchWholeWord: Boolean = false,
     val useRegex: Boolean = false,
+    val preserveCase: Boolean = false,
     val searchScope: SearchScope = SearchScope.PROJECT,
     val includePatterns: List<String> = emptyList(),
     val excludePatterns: List<String> = listOf("**/node_modules/**", "**/dist/**", "**/build/**", "**/.git/**"),
-    val respectGitIgnore: Boolean = true
+    val respectGitIgnore: Boolean = true,
+    val searchOnlyInOpenEditors: Boolean = false,
+    val useExcludeSettings: Boolean = true
 )
 
 /**
