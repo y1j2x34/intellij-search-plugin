@@ -1,6 +1,7 @@
 package com.github.y1j2x34.intellijsearchplugin.ui
 
 import com.github.y1j2x34.intellijsearchplugin.model.SearchOptions
+import com.github.y1j2x34.intellijsearchplugin.icons.PluginIcons
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
@@ -15,20 +16,37 @@ import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import javax.swing.*
 
+private class PlaceholderTextField(private val placeholder: String) : JBTextField() {
+    override fun paintComponent(g: Graphics) {
+        super.paintComponent(g)
+        if (text.isEmpty() && !isFocusOwner) {
+            val g2 = g as Graphics2D
+            g2.color = UIManager.getColor("TextField.inactiveForeground") ?: JBColor.GRAY
+            g2.font = font
+            val insets = insets
+            val fm = g2.fontMetrics
+            g2.drawString(placeholder, insets.left + 6, insets.top + fm.ascent + (height - insets.top - insets.bottom - fm.height) / 2)
+        }
+    }
+}
+
 /**
  * 搜索表单面板 - VS Code 风格：搜索框左侧箭头按钮展开/收起替换输入框
  */
 class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
 
-    private val searchField = JBTextField()
-    private val replaceField = JBTextField()
+    private val searchField = PlaceholderTextField("Search(↑↓ for history)")
+    private val replaceField = PlaceholderTextField("Replace")
+
+    private val searchHistory = mutableListOf<String>()
+    private var historyIndex = -1
 
     private val matchCaseToggle = createOptionToggle("Aa", "Match Case")
     private val wholeWordToggle = createOptionToggle("Ab", "Match Whole Word")
     private val regexToggle = createOptionToggle(".*", "Use Regex")
 
-    private val includeField = JBTextField()
-    private val excludeField = JBTextField()
+    private val includeField = PlaceholderTextField("e.g. src/**, *.ts")
+    private val excludeField = PlaceholderTextField("e.g. **/node_modules/**")
 
     private val replaceButton = JButton("Replace", AllIcons.Actions.Replace)
     private val replaceAllButton = JButton("Replace All")
@@ -113,12 +131,10 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
         }
 
         gbc.gridy++
-        includeField.toolTipText = "e.g., src/**, *.ts (comma separated)"
         mainPanel.add(optionRow("Include:", includeField), gbc)
 
         gbc.gridy++
         excludeField.text = "**/node_modules/**, **/dist/**, **/build/**"
-        excludeField.toolTipText = "e.g., node_modules/**, dist/** (comma separated)"
         mainPanel.add(optionRow("Exclude:", excludeField), gbc)
 
         add(mainPanel, BorderLayout.NORTH)
@@ -347,19 +363,38 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun setupListeners() {
+        searchField.addKeyListener(object : KeyAdapter() {
+            override fun keyPressed(e: KeyEvent) {
+                when (e.keyCode) {
+                    KeyEvent.VK_ENTER -> triggerSearch()
+                    KeyEvent.VK_UP -> {
+                        if (searchHistory.isEmpty()) return
+                        historyIndex = (historyIndex + 1).coerceAtMost(searchHistory.size - 1)
+                        searchField.text = searchHistory[historyIndex]
+                    }
+                    KeyEvent.VK_DOWN -> {
+                        if (historyIndex <= 0) {
+                            historyIndex = -1
+                            searchField.text = ""
+                        } else {
+                            historyIndex--
+                            searchField.text = searchHistory[historyIndex]
+                        }
+                    }
+                }
+            }
+        })
+
         val enterKeyListener = object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
                 if (e.keyCode == KeyEvent.VK_ENTER) triggerSearch()
             }
         }
-        searchField.addKeyListener(enterKeyListener)
         replaceField.addKeyListener(enterKeyListener)
         includeField.addKeyListener(enterKeyListener)
         excludeField.addKeyListener(enterKeyListener)
 
-        toggleArrowButton.addActionListener {
-            toggleReplaceMode()
-        }
+        toggleArrowButton.addActionListener { toggleReplaceMode() }
 
         replaceButton.addActionListener { triggerReplace() }
         replaceAllButton.addActionListener { triggerReplaceAll() }
@@ -376,6 +411,10 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun triggerSearch() {
         if (searchField.text.isBlank()) return
+        val query = searchField.text
+        searchHistory.remove(query)
+        searchHistory.add(0, query)
+        historyIndex = -1
         onSearchTriggered?.invoke(buildSearchOptions())
     }
 
