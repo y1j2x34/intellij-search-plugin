@@ -106,17 +106,19 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
 
                 // Check if click landed on an action button
                 if (row >= 0 && (onReplaceMatch != null || onReplaceAllInFile != null)) {
-                    val rowBounds = resultTree.getRowBounds(row) ?: return
-                    val btnX = rowBounds.x + rowBounds.width - BTN_MARGIN - BTN_SIZE
-                    if (e.x >= btnX - BTN_GAP - BTN_SIZE && e.x <= btnX + BTN_SIZE) {
+                    val cellRenderer = resultTree.cellRenderer
+                    val rendererComp = resultTree.getCellRenderer().getTreeCellRendererComponent(
+                        resultTree, path.lastPathComponent, false, false, false, row, false
+                    )
+                    val compWidth = rendererComp.preferredSize.width.coerceAtLeast(resultTree.width)
+                    val btnX = compWidth - BTN_MARGIN - BTN_SIZE
+                    if (e.x >= btnX && e.x <= btnX + BTN_SIZE) {
                         when (val userObject = node.userObject) {
                             is FileResultNode -> {
-                                // Click on replace-all-in-file button
                                 onReplaceAllInFile?.invoke(userObject.file)
                                 return
                             }
                             is LineMatchNode -> {
-                                // Click on replace-match button
                                 onReplaceMatch?.invoke(userObject.file, userObject.lineMatch)
                                 return
                             }

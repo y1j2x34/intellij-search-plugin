@@ -8,10 +8,8 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.vfs.VirtualFile
-import com.intellij.psi.search.FilenameIndex
-import com.intellij.psi.search.GlobalSearchScope
-import com.intellij.util.indexing.FileBasedIndex
 import java.util.regex.Pattern
 import java.util.regex.PatternSyntaxException
 
@@ -53,11 +51,12 @@ class ProjectSearchService(private val project: Project) {
                         indicator.fraction = index.toDouble() / files.size
                         indicator.text2 = "Searching in ${file.name}"
 
-                        val fileResult = searchInFile(file, pattern, options)
+                        val fileResult = ReadAction.compute<FileSearchResult?, Exception> {
+                            searchInFile(file, pattern)
+                        }
                         if (fileResult != null && fileResult.matches.isNotEmpty()) {
                             results.add(fileResult)
                             totalMatches += fileResult.matchCount
-                            // 切换到 EDT 线程更新 UI
                             ApplicationManager.getApplication().invokeLater {
                                 onProgress(fileResult)
                             }
@@ -88,63 +87,51 @@ class ProjectSearchService(private val project: Project) {
      * 获取需要搜索的文件列表
      */
     private fun getFilesToSearch(options: SearchOptions, indicator: ProgressIndicator): List<VirtualFile> {
-        return ReadAction.compute<List<VirtualFile>, Exception> {
-            indicator.text = "Collecting files..."
-            val scope = when (options.searchScope) {
-                SearchScope.PROJECT -> GlobalSearchScope.projectScope(project)
-                SearchScope.MODULE -> GlobalSearchScope.projectScope(project) // TODO: 实现模块范围
-                SearchScope.DIRECTORY -> GlobalSearchScope.projectScope(project) // TODO: 实现目录范围
-                SearchScope.CUSTOM -> GlobalSearchScope.projectScope(project)
-            }
-
-            val allFiles = mutableListOf<VirtualFile>()
-            FileBasedIndex.getInstance().processAllKeys(FilenameIndex.NAME, { filename ->
-                if (!indicator.isCanceled) {
-                    val files = FilenameIndex.getVirtualFilesByName(project, filename, options.matchCase, scope)
-                    allFiles.addAll(files)
+        indicator.text = "Collecting files..."
+        val allFiles = mutableListOf<VirtualFile>()
+        ReadAction.run<Exception> {
+            ProjectFileIndex.getInstance(project).iterateContent { file ->
+                if (!indicator.isCanceled && !file.isDirectory &&
+                    isTextFile(file) &&
+                    matchesIncludePatterns(file, options.includePatterns) &&
+                    !matchesExcludePatterns(file, options.excludePatterns)
+                ) {
+                    allFiles.add(file)
                 }
                 true
-            }, scope, null)
-
-            // 过滤文件
-            allFiles.filter { file ->
-                isTextFile(file) &&
-                        matchesIncludePatterns(file, options.includePatterns) &&
-                        !matchesExcludePatterns(file, options.excludePatterns)
             }
         }
+        return allFiles
     }
 
     /**
-     * 在单个文件中搜索
+     * 在单个文件中搜索（调用方需持有读锁）
      */
-    private fun searchInFile(file: VirtualFile, pattern: Pattern, options: SearchOptions): FileSearchResult? {
-        return ReadAction.compute<FileSearchResult?, Exception> {
-            try {
-                if (!file.isValid || file.isDirectory) return@compute null
+    private fun searchInFile(file: VirtualFile, pattern: Pattern): FileSearchResult? {
+        return try {
+            if (!file.isValid || file.isDirectory) return null
 
-                val content = String(file.contentsToByteArray(), file.charset)
-                val lines = content.lines()
-                val matches = mutableListOf<LineMatch>()
+            val content = String(file.contentsToByteArray(), file.charset)
+            val lines = content.lines()
+            val matches = mutableListOf<LineMatch>()
 
-                lines.forEachIndexed { index, line ->
-                    val lineMatches = findMatchesInLine(line, pattern, options)
-                    if (lineMatches.isNotEmpty()) {
-                        matches.add(LineMatch(index + 1, line, lineMatches))
-                    }
+            lines.forEachIndexed { index, line ->
+                val lineMatches = findMatchesInLine(line, pattern)
+                if (lineMatches.isNotEmpty()) {
+                    matches.add(LineMatch(index + 1, line, lineMatches))
                 }
-
-                if (matches.isEmpty()) null else FileSearchResult(file, matches)
-            } catch (e: Exception) {
-                null
             }
+
+            if (matches.isEmpty()) null else FileSearchResult(file, matches)
+        } catch (e: Exception) {
+            null
         }
     }
 
     /**
      * 在单行中查找所有匹配
      */
-    private fun findMatchesInLine(line: String, pattern: Pattern, options: SearchOptions): List<IntRange> {
+    private fun findMatchesInLine(line: String, pattern: Pattern): List<IntRange> {
         val ranges = mutableListOf<IntRange>()
         val matcher = pattern.matcher(line)
 

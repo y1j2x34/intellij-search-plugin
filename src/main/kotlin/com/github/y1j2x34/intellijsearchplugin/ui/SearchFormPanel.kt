@@ -381,6 +381,7 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun triggerSearch() {
+        if (searchField.text.isBlank()) return
         onSearchTriggered?.invoke(buildSearchOptions())
     }
 
