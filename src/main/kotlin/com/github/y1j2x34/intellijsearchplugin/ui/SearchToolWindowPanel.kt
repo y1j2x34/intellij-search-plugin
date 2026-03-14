@@ -37,67 +37,61 @@ class SearchToolWindowPanel(private val project: Project) : JPanel(BorderLayout(
     private fun setupUI() {
         border = JBUI.Borders.empty()
 
-        // 顶部工具栏
         val toolbar = createToolbar()
         add(toolbar.component, BorderLayout.NORTH)
-
-        // 搜索表单
         add(searchFormPanel, BorderLayout.NORTH)
-
-        // 搜索结果
         add(searchResultsPanel, BorderLayout.CENTER)
     }
 
     private fun createToolbar(): ActionToolbarImpl {
         val actionGroup = DefaultActionGroup().apply {
-            add(ToggleReplaceModeAction())
             add(ClearResultsAction())
         }
-
         return ActionToolbarImpl("SearchToolWindow", actionGroup, true).apply {
             setTargetComponent(this@SearchToolWindowPanel)
         }
     }
 
     private fun setupCallbacks() {
-        // 搜索回调
         searchFormPanel.setOnSearchTriggered { options ->
             searchResultsPanel.clearResults()
             currentResultCount = 0
             currentFileCount = 0
-
-            // 显示加载动画
             searchResultsPanel.showLoading()
 
             searchService.searchAsync(
                 options = options,
                 onProgress = { fileResult ->
-                    // 收到第一个结果时切换到结果面板
                     searchResultsPanel.hideLoading()
-
-                    // 渐进式显示结果
                     searchResultsPanel.addFileResult(fileResult)
                     currentFileCount++
                     currentResultCount += fileResult.matchCount
                     searchResultsPanel.updateSummary(currentResultCount, currentFileCount)
                 },
                 onComplete = { result ->
-                    // 搜索完成，确保加载动画已隐藏
                     searchResultsPanel.hideLoading()
                     lastSearchResult = result
                     searchResultsPanel.displaySearchResult(result)
+                    // Wire up inline replace buttons now that we have results
+                    setupInlineReplaceCallbacks()
                 }
             )
         }
 
-        // 替换回调
+        // Replace selected match (form button) — re-search after replacing
         searchFormPanel.setOnReplaceTriggered { options, replaceText ->
-            // 单个替换功能暂时不实现，提示用户使用全部替换
-            Messages.showInfoMessage(
-                project,
-                "Please use 'Replace All' to replace all occurrences in the search results.",
-                "Replace"
-            )
+            if (replaceText.isEmpty()) return@setOnReplaceTriggered
+            val result = lastSearchResult ?: run {
+                Messages.showWarningDialog(project, "No search results. Please search first.", "Replace")
+                return@setOnReplaceTriggered
+            }
+            // Replace first match across all files, then re-search
+            val firstFile = result.fileResults.firstOrNull() ?: return@setOnReplaceTriggered
+            val firstMatch = firstFile.matches.firstOrNull() ?: return@setOnReplaceTriggered
+            val replaced = replaceService.replaceInFile(firstFile.file, options, replaceText, firstMatch.lineNumber)
+            if (replaced) {
+                triggerSearch()
+            }
         }
 
         searchFormPanel.setOnReplaceAllTriggered { options, replaceText ->
@@ -111,7 +105,6 @@ class SearchToolWindowPanel(private val project: Project) : JPanel(BorderLayout(
                 return@setOnReplaceAllTriggered
             }
 
-            // 确认替换
             val confirmed = Messages.showYesNoDialog(
                 project,
                 "Replace ${result.totalMatches} occurrences in ${result.totalFiles} files?",
@@ -120,20 +113,13 @@ class SearchToolWindowPanel(private val project: Project) : JPanel(BorderLayout(
             ) == Messages.YES
 
             if (confirmed) {
-                val replacedFiles = replaceService.replaceAllInFiles(
-                    result.fileResults,
-                    options,
-                    replaceText
-                )
-
+                val replacedFiles = replaceService.replaceAllInFiles(result.fileResults, options, replaceText)
                 val totalReplaced = replacedFiles.values.sum()
                 Messages.showInfoMessage(
                     project,
                     "Replaced $totalReplaced occurrences in ${replacedFiles.size} files.",
                     "Replace All Complete"
                 )
-
-                // 清空结果，提示用户重新搜索
                 searchResultsPanel.clearResults()
                 lastSearchResult = null
             }
@@ -141,28 +127,36 @@ class SearchToolWindowPanel(private val project: Project) : JPanel(BorderLayout(
     }
 
     /**
-     * 聚焦搜索输入框
+     * Wire up the inline replace buttons on tree nodes after search completes.
+     * These use the last known search options from the form.
      */
-    fun focusSearchField() {
-        searchFormPanel.focusSearchField()
-    }
+    private fun setupInlineReplaceCallbacks() {
+        searchResultsPanel.onReplaceMatch = { file, lineMatch ->
+            val replaceText = searchFormPanel.getReplaceText()
+            val options = searchFormPanel.buildCurrentSearchOptions()
+            val replaced = replaceService.replaceInFile(file, options, replaceText, lineMatch.lineNumber)
+            if (replaced) triggerSearch()
+        }
 
-    /**
-     * 切换替换模式的 Action
-     */
-    private inner class ToggleReplaceModeAction : AnAction(
-        "Toggle Replace Mode",
-        "Show/hide replace field",
-        AllIcons.Actions.Replace
-    ) {
-        override fun actionPerformed(e: AnActionEvent) {
-            searchFormPanel.toggleReplaceMode()
+        searchResultsPanel.onReplaceAllInFile = { file ->
+            val replaceText = searchFormPanel.getReplaceText()
+            val options = searchFormPanel.buildCurrentSearchOptions()
+            val count = replaceService.replaceAllInFile(file, options, replaceText)
+            if (count > 0) triggerSearch()
         }
     }
 
     /**
-     * 清空结果的 Action
+     * Re-trigger the last search to refresh results after a replace.
      */
+    private fun triggerSearch() {
+        searchFormPanel.invokeSearch()
+    }
+
+    fun focusSearchField() {
+        searchFormPanel.focusSearchField()
+    }
+
     private inner class ClearResultsAction : AnAction(
         "Clear Results",
         "Clear all search results",

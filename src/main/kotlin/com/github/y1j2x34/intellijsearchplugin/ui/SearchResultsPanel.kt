@@ -12,24 +12,17 @@ import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.ui.treeStructure.Tree
-import com.intellij.util.ui.AnimatedIcon
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.AsyncProcessIcon
-import java.awt.BorderLayout
-import java.awt.CardLayout
-import java.awt.GridBagConstraints
-import java.awt.GridBagLayout
+import java.awt.*
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import javax.swing.JPanel
-import javax.swing.JLabel
-import javax.swing.SwingConstants
+import javax.swing.*
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
-import javax.swing.tree.TreePath
 
 /**
- * 搜索结果面板 - 显示搜索结果树
+ * 搜索结果面板 - 显示搜索结果树，支持 VS Code 风格的内联替换按钮
  */
 class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) {
 
@@ -41,9 +34,20 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
     private val cardLayout = CardLayout()
     private val contentPanel = JPanel(cardLayout)
 
+    // Hovered row tracking for button visibility
+    private var hoveredRow = -1
+
+    // Replace callbacks — set these to enable inline replace buttons
+    var onReplaceMatch: ((VirtualFile, LineMatch) -> Unit)? = null
+    var onReplaceAllInFile: ((VirtualFile) -> Unit)? = null
+
     companion object {
         private const val CARD_RESULTS = "results"
         private const val CARD_LOADING = "loading"
+        // Width reserved for action buttons on the right side of each row
+        private val BTN_SIZE get() = JBUI.scale(20)
+        private val BTN_GAP get() = JBUI.scale(2)
+        private val BTN_MARGIN get() = JBUI.scale(4)
     }
 
     init {
@@ -54,18 +58,15 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
     private fun setupUI() {
         border = JBUI.Borders.empty(8)
 
-        // 顶部摘要
         summaryLabel.border = JBUI.Borders.empty(4)
         add(summaryLabel, BorderLayout.NORTH)
 
-        // 结果树面板
         resultTree.isRootVisible = false
         resultTree.showsRootHandles = true
         resultTree.cellRenderer = SearchResultTreeCellRenderer()
 
         val scrollPane = JBScrollPane(resultTree)
 
-        // 加载动画面板
         val loadingPanel = JPanel(GridBagLayout()).apply {
             val gbc = GridBagConstraints()
             val innerPanel = JPanel(BorderLayout(0, JBUI.scale(8))).apply {
@@ -80,7 +81,6 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
             add(innerPanel, gbc)
         }
 
-        // 使用 CardLayout 切换结果面板和加载面板
         contentPanel.add(scrollPane, CARD_RESULTS)
         contentPanel.add(loadingPanel, CARD_LOADING)
         cardLayout.show(contentPanel, CARD_RESULTS)
@@ -88,78 +88,88 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
         add(contentPanel, BorderLayout.CENTER)
     }
 
-    /**
-     * 显示加载动画
-     */
     fun showLoading() {
         summaryLabel.text = "Searching..."
         cardLayout.show(contentPanel, CARD_LOADING)
     }
 
-    /**
-     * 隐藏加载动画，显示结果面板
-     */
     fun hideLoading() {
         cardLayout.show(contentPanel, CARD_RESULTS)
     }
 
     private fun setupListeners() {
-        // 双击跳转到文件
         resultTree.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
+                val row = resultTree.getRowForLocation(e.x, e.y)
+                val path = resultTree.getPathForLocation(e.x, e.y) ?: return
+                val node = path.lastPathComponent as? DefaultMutableTreeNode ?: return
+
+                // Check if click landed on an action button
+                if (row >= 0 && (onReplaceMatch != null || onReplaceAllInFile != null)) {
+                    val rowBounds = resultTree.getRowBounds(row) ?: return
+                    val btnX = rowBounds.x + rowBounds.width - BTN_MARGIN - BTN_SIZE
+                    if (e.x >= btnX - BTN_GAP - BTN_SIZE && e.x <= btnX + BTN_SIZE) {
+                        when (val userObject = node.userObject) {
+                            is FileResultNode -> {
+                                // Click on replace-all-in-file button
+                                onReplaceAllInFile?.invoke(userObject.file)
+                                return
+                            }
+                            is LineMatchNode -> {
+                                // Click on replace-match button
+                                onReplaceMatch?.invoke(userObject.file, userObject.lineMatch)
+                                return
+                            }
+                        }
+                    }
+                }
+
+                // Double-click to open file
                 if (e.clickCount == 2) {
-                    val path = resultTree.getPathForLocation(e.x, e.y) ?: return
-                    val node = path.lastPathComponent as? DefaultMutableTreeNode ?: return
                     handleNodeDoubleClick(node)
+                }
+            }
+
+            override fun mouseExited(e: MouseEvent) {
+                hoveredRow = -1
+                resultTree.repaint()
+            }
+        })
+
+        resultTree.addMouseMotionListener(object : MouseAdapter() {
+            override fun mouseMoved(e: MouseEvent) {
+                val row = resultTree.getRowForLocation(e.x, e.y)
+                if (row != hoveredRow) {
+                    hoveredRow = row
+                    resultTree.repaint()
                 }
             }
         })
     }
 
-    /**
-     * 显示搜索结果
-     */
     fun displaySearchResult(result: SearchResult) {
         rootNode.removeAllChildren()
-
-        result.fileResults.forEach { fileResult ->
-            addFileResult(fileResult)
-        }
-
+        result.fileResults.forEach { addFileResult(it) }
         treeModel.reload()
         expandAllNodes()
-
-        // 更新摘要
         summaryLabel.text = "${result.totalMatches} results in ${result.totalFiles} files (${result.searchTimeMs}ms)"
     }
 
-    /**
-     * 添加单个文件结果（用于渐进式显示）
-     */
     fun addFileResult(fileResult: FileSearchResult) {
         val fileNode = DefaultMutableTreeNode(FileResultNode(fileResult.file, fileResult.matchCount))
-
         fileResult.matches.forEach { lineMatch ->
-            val lineNode = DefaultMutableTreeNode(LineMatchNode(fileResult.file, lineMatch))
-            fileNode.add(lineNode)
+            fileNode.add(DefaultMutableTreeNode(LineMatchNode(fileResult.file, lineMatch)))
         }
-
         rootNode.add(fileNode)
         treeModel.reload(rootNode)
     }
 
-    /**
-     * 清空结果
-     */
     fun clearResults() {
         rootNode.removeAllChildren()
         treeModel.reload()
         summaryLabel.text = "No results"
     }
 
-    /**
-     * 更新摘要信息
-     */
     fun updateSummary(totalMatches: Int, totalFiles: Int) {
         summaryLabel.text = "$totalMatches results in $totalFiles files"
     }
@@ -172,14 +182,8 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
 
     private fun handleNodeDoubleClick(node: DefaultMutableTreeNode) {
         when (val userObject = node.userObject) {
-            is FileResultNode -> {
-                // 点击文件节点，打开文件
-                openFile(userObject.file, 0)
-            }
-            is LineMatchNode -> {
-                // 点击行节点，跳转到具体行
-                openFile(userObject.file, userObject.lineMatch.lineNumber)
-            }
+            is FileResultNode -> openFile(userObject.file, 0)
+            is LineMatchNode -> openFile(userObject.file, userObject.lineMatch.lineNumber)
         }
     }
 
@@ -192,26 +196,19 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
         FileEditorManager.getInstance(project).openTextEditor(descriptor, true)
     }
 
-    /**
-     * 文件结果节点数据
-     */
-    data class FileResultNode(
-        val file: VirtualFile,
-        val matchCount: Int
-    )
+    data class FileResultNode(val file: VirtualFile, val matchCount: Int)
+    data class LineMatchNode(val file: VirtualFile, val lineMatch: LineMatch)
 
     /**
-     * 行匹配节点数据
+     * Renders each tree row. On hover, paints inline action buttons on the right:
+     * - File node: one "Replace All in File" button
+     * - Match node: one "Replace" button
      */
-    data class LineMatchNode(
-        val file: VirtualFile,
-        val lineMatch: LineMatch
-    )
+    private inner class SearchResultTreeCellRenderer : ColoredTreeCellRenderer() {
 
-    /**
-     * 自定义树节点渲染器
-     */
-    private class SearchResultTreeCellRenderer : ColoredTreeCellRenderer() {
+        private val replaceIcon = AllIcons.Actions.Replace
+        private val replaceAllIcon = AllIcons.Actions.Replace
+
         override fun customizeCellRenderer(
             tree: javax.swing.JTree,
             value: Any?,
@@ -233,20 +230,14 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
                 is LineMatchNode -> {
                     icon = null
                     append("  ${userObject.lineMatch.lineNumber}: ", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-
-                    // 高亮显示匹配的文本
                     val line = userObject.lineMatch.lineContent.trim()
                     val ranges = userObject.lineMatch.matchRanges
-
                     var lastIndex = 0
                     ranges.forEach { range ->
                         if (range.first > lastIndex) {
                             append(line.substring(lastIndex, range.first), SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         }
-                        append(
-                            line.substring(range.first, range.last),
-                            SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES
-                        )
+                        append(line.substring(range.first, range.last), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
                         lastIndex = range.last
                     }
                     if (lastIndex < line.length) {
@@ -254,6 +245,59 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
                     }
                 }
             }
+        }
+
+        override fun paintComponent(g: Graphics) {
+            super.paintComponent(g)
+
+            val row = getRowForThisComponent() ?: return
+            if (row != hoveredRow) return
+            if (onReplaceMatch == null && onReplaceAllInFile == null) return
+
+            val node = getNodeForRow(row) ?: return
+            val userObject = node.userObject
+
+            val btnY = (height - BTN_SIZE) / 2
+            val btnX = width - BTN_MARGIN - BTN_SIZE
+
+            val g2 = g as Graphics2D
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+
+            when (userObject) {
+                is FileResultNode -> {
+                    // "Replace All in File" button
+                    paintActionButton(g2, replaceAllIcon, btnX, btnY)
+                }
+                is LineMatchNode -> {
+                    // "Replace" button
+                    paintActionButton(g2, replaceIcon, btnX, btnY)
+                }
+            }
+        }
+
+        private fun paintActionButton(g2: Graphics2D, icon: Icon, x: Int, y: Int) {
+            // Subtle hover background
+            g2.color = UIManager.getColor("ActionButton.hoverBackground")
+                ?: Color(0, 0, 0, 20)
+            g2.fillRoundRect(x - JBUI.scale(2), y - JBUI.scale(2),
+                BTN_SIZE + JBUI.scale(4), BTN_SIZE + JBUI.scale(4),
+                JBUI.scale(4), JBUI.scale(4))
+            icon.paintIcon(this, g2, x + (BTN_SIZE - icon.iconWidth) / 2, y + (BTN_SIZE - icon.iconHeight) / 2)
+        }
+
+        private fun getRowForThisComponent(): Int? {
+            val tree = parent as? JTree ?: return null
+            for (i in 0 until tree.rowCount) {
+                val bounds = tree.getRowBounds(i) ?: continue
+                if (bounds.y == y) return i
+            }
+            return null
+        }
+
+        private fun getNodeForRow(row: Int): DefaultMutableTreeNode? {
+            val tree = parent as? JTree ?: return null
+            val path = tree.getPathForRow(row) ?: return null
+            return path.lastPathComponent as? DefaultMutableTreeNode
         }
     }
 }

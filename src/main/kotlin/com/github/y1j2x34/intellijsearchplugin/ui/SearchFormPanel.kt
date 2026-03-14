@@ -6,6 +6,7 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComboBox
 import com.intellij.ui.JBColor
+import com.intellij.ui.SimpleTextAttributes
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBTextField
 import com.intellij.util.ui.JBUI
@@ -17,14 +18,13 @@ import java.awt.event.KeyEvent
 import javax.swing.*
 
 /**
- * 搜索表单面板 - 包含搜索输入框和各种选项
+ * 搜索表单面板 - VS Code 风格：搜索框左侧箭头按钮展开/收起替换输入框
  */
 class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private val searchField = JBTextField()
     private val replaceField = JBTextField()
 
-    // 搜索选项切换按钮（内嵌在搜索输入框内）
     private val matchCaseToggle = createOptionToggle("Aa", "Match Case")
     private val wholeWordToggle = createOptionToggle("Ab", "Match Whole Word")
     private val regexToggle = createOptionToggle(".*", "Use Regex")
@@ -36,7 +36,12 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     private val replaceButton = JButton("Replace", AllIcons.Actions.Replace)
     private val replaceAllButton = JButton("Replace All")
 
+    // VS Code 风格：左侧展开箭头
+    private val toggleArrowButton = createArrowButton()
+
     private var showReplaceMode = false
+    private lateinit var replaceRow: JPanel
+
     private var onSearchTriggered: ((SearchOptions) -> Unit)? = null
     private var onReplaceTriggered: ((SearchOptions, String) -> Unit)? = null
     private var onReplaceAllTriggered: ((SearchOptions, String) -> Unit)? = null
@@ -47,70 +52,135 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun setupUI() {
-        border = JBUI.Borders.empty(8)
+        border = JBUI.Borders.empty(4, 4, 4, 4)
 
         val mainPanel = JPanel(GridBagLayout())
+        val arrowW = JBUI.scale(20)
+
+        // ── 搜索行 + 替换行共享一个容器，箭头按钮跨两行 ──────
+        val inputPanel = JPanel(GridBagLayout()).apply { isOpaque = false }
+
+        // 箭头按钮：col=0, row=0, gridheight=2，垂直填充
+        val arrowGbc = GridBagConstraints().apply {
+            gridx = 0; gridy = 0; gridheight = 2
+            fill = GridBagConstraints.BOTH
+            insets = JBUI.insets(0, 0, 0, JBUI.scale(4))
+        }
+        inputPanel.add(toggleArrowButton, arrowGbc)
+
+        // 搜索输入框：col=1, row=0
+        val searchFieldGbc = GridBagConstraints().apply {
+            gridx = 1; gridy = 0
+            fill = GridBagConstraints.HORIZONTAL
+            weightx = 1.0
+            insets = JBUI.insets(0, 0, JBUI.scale(2), 0)
+        }
+        inputPanel.add(createSearchFieldWithOptions(), searchFieldGbc)
+
+        // 替换输入框：col=1, row=1（初始隐藏）
+        val replaceFieldComp = createReplaceFieldWithButtons()
+        replaceRow = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            isVisible = false
+            add(replaceFieldComp, BorderLayout.CENTER)
+        }
+        val replaceFieldGbc = GridBagConstraints().apply {
+            gridx = 1; gridy = 1
+            fill = GridBagConstraints.HORIZONTAL
+            weightx = 1.0
+        }
+        inputPanel.add(replaceRow, replaceFieldGbc)
+
         val gbc = GridBagConstraints().apply {
             fill = GridBagConstraints.HORIZONTAL
             weightx = 1.0
-            gridx = 0
-            gridy = 0
-            insets = JBUI.insets(2)
+            gridx = 0; gridy = 0
+            insets = JBUI.insets(2, 0, 2, 0)
+        }
+        mainPanel.add(inputPanel, gbc)
+
+        // ── 其余选项行（label 在上，输入框在下）────────────────
+        fun optionRow(label: String, comp: JComponent): JPanel {
+            return JPanel(BorderLayout(0, JBUI.scale(2))).apply {
+                isOpaque = false
+                add(Box.createHorizontalStrut(arrowW + JBUI.scale(4)), BorderLayout.WEST)
+                val inner = JPanel(BorderLayout(0, JBUI.scale(2))).apply {
+                    isOpaque = false
+                    add(JBLabel(label).apply {
+                        foreground = SimpleTextAttributes.GRAYED_ATTRIBUTES.fgColor
+                    }, BorderLayout.NORTH)
+                    add(comp, BorderLayout.CENTER)
+                }
+                add(inner, BorderLayout.CENTER)
+            }
         }
 
-        // 搜索输入行（输入框内嵌选项按钮）
-        val searchPanel = JPanel(BorderLayout(5, 0))
-        searchPanel.add(JBLabel("Search:"), BorderLayout.WEST)
-        searchPanel.add(createSearchFieldWithOptions(), BorderLayout.CENTER)
-        mainPanel.add(searchPanel, gbc)
-
-        // 替换输入行（初始隐藏）
         gbc.gridy++
-        val replacePanel = JPanel(BorderLayout(5, 0))
-        replacePanel.add(JBLabel("Replace:"), BorderLayout.WEST)
-        replacePanel.add(replaceField, BorderLayout.CENTER)
-        replacePanel.isVisible = false
-        mainPanel.add(replacePanel, gbc)
+        mainPanel.add(optionRow("Scope:", scopeComboBox), gbc)
 
-        // 搜索范围
         gbc.gridy++
-        val scopePanel = JPanel(BorderLayout(5, 0))
-        scopePanel.add(JBLabel("Scope:"), BorderLayout.WEST)
-        scopePanel.add(scopeComboBox, BorderLayout.CENTER)
-        mainPanel.add(scopePanel, gbc)
-
-        // Include patterns
-        gbc.gridy++
-        val includePanel = JPanel(BorderLayout(5, 0))
-        includePanel.add(JBLabel("Include:"), BorderLayout.WEST)
         includeField.toolTipText = "e.g., src/**, *.ts (comma separated)"
-        includePanel.add(includeField, BorderLayout.CENTER)
-        mainPanel.add(includePanel, gbc)
+        mainPanel.add(optionRow("Include:", includeField), gbc)
 
-        // Exclude patterns
         gbc.gridy++
-        val excludePanel = JPanel(BorderLayout(5, 0))
-        excludePanel.add(JBLabel("Exclude:"), BorderLayout.WEST)
         excludeField.text = "**/node_modules/**, **/dist/**, **/build/**"
         excludeField.toolTipText = "e.g., node_modules/**, dist/** (comma separated)"
-        excludePanel.add(excludeField, BorderLayout.CENTER)
-        mainPanel.add(excludePanel, gbc)
-
-        // 按钮行（仅替换相关按钮）
-        gbc.gridy++
-        val buttonPanel = JPanel()
-        buttonPanel.add(replaceButton)
-        buttonPanel.add(replaceAllButton)
-        replaceButton.isVisible = false
-        replaceAllButton.isVisible = false
-        mainPanel.add(buttonPanel, gbc)
+        mainPanel.add(optionRow("Exclude:", excludeField), gbc)
 
         add(mainPanel, BorderLayout.NORTH)
     }
 
     /**
-     * 创建带有内嵌选项按钮的搜索输入框
-     * 视觉上看起来是一个输入框，右侧有小图标切换按钮
+     * VS Code 风格的展开箭头按钮（► / ▼）
+     */
+    private fun createArrowButton(): JButton {
+        return object : JButton() {
+            init {
+                isFocusable = false
+                isFocusPainted = false
+                isContentAreaFilled = false
+                isBorderPainted = false
+                isOpaque = false
+                isRolloverEnabled = true
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                toolTipText = "Toggle Replace"
+                val sz = JBUI.scale(20)
+                preferredSize = Dimension(sz, sz)
+                minimumSize = Dimension(sz, 0)
+                maximumSize = Dimension(sz, Int.MAX_VALUE)
+            }
+
+            override fun paintComponent(g: Graphics) {
+                val g2 = g as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+
+                if (model.isRollover) {
+                    g2.color = JBColor(Color(0, 0, 0, 20), Color(255, 255, 255, 25))
+                    g2.fillRoundRect(1, 1, width - 2, height - 2, JBUI.scale(4), JBUI.scale(4))
+                }
+
+                g2.color = UIManager.getColor("Label.foreground") ?: JBColor.foreground()
+                val cx = width / 2
+                val cy = height / 2
+                val s = JBUI.scale(4)
+
+                if (showReplaceMode) {
+                    // ▼ 向下箭头
+                    val xp = intArrayOf(cx - s, cx + s, cx)
+                    val yp = intArrayOf(cy - s / 2, cy - s / 2, cy + s / 2)
+                    g2.fillPolygon(xp, yp, 3)
+                } else {
+                    // ► 向右箭头
+                    val xp = intArrayOf(cx - s / 2, cx + s / 2, cx - s / 2)
+                    val yp = intArrayOf(cy - s, cy, cy + s)
+                    g2.fillPolygon(xp, yp, 3)
+                }
+            }
+        }
+    }
+
+    /**
+     * 搜索输入框 + 右侧选项按钮（Aa / Ab / .*）
      */
     private fun createSearchFieldWithOptions(): JComponent {
         val borderColor = JBColor.border()
@@ -123,44 +193,116 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
         wrapper.isOpaque = true
         wrapper.border = JBUI.Borders.customLine(borderColor, 1)
 
-        // 搜索框本身去除边框，融入包装面板
         searchField.border = JBUI.Borders.empty(2, 6)
         searchField.isOpaque = false
 
-        // 聚焦时改变包装面板边框颜色
         searchField.addFocusListener(object : FocusAdapter() {
             override fun focusGained(e: FocusEvent) {
                 wrapper.border = JBUI.Borders.customLine(focusColor, 1)
                 wrapper.repaint()
             }
-
             override fun focusLost(e: FocusEvent) {
                 wrapper.border = JBUI.Borders.customLine(borderColor, 1)
                 wrapper.repaint()
             }
         })
 
-        // 选项按钮面板
         val buttonsPanel = JPanel().apply {
             layout = BoxLayout(this, BoxLayout.X_AXIS)
             isOpaque = false
             border = JBUI.Borders.empty(2, 0, 2, 4)
+            add(matchCaseToggle)
+            add(Box.createHorizontalStrut(JBUI.scale(1)))
+            add(wholeWordToggle)
+            add(Box.createHorizontalStrut(JBUI.scale(1)))
+            add(regexToggle)
         }
-        buttonsPanel.add(matchCaseToggle)
-        buttonsPanel.add(Box.createHorizontalStrut(JBUI.scale(1)))
-        buttonsPanel.add(wholeWordToggle)
-        buttonsPanel.add(Box.createHorizontalStrut(JBUI.scale(1)))
-        buttonsPanel.add(regexToggle)
 
         wrapper.add(searchField, BorderLayout.CENTER)
         wrapper.add(buttonsPanel, BorderLayout.EAST)
-
         return wrapper
     }
 
     /**
-     * 创建搜索选项切换按钮
-     * 模拟 VS Code 风格：小图标按钮，悬停高亮，选中高亮，tooltip 提示
+     * 替换输入框 + 右侧 Replace / Replace All 按钮
+     */
+    private fun createReplaceFieldWithButtons(): JComponent {
+        val borderColor = JBColor.border()
+        val focusColor = UIManager.getColor("Component.focusColor")
+            ?: JBColor(Color(0x3d, 0x98, 0xf5), Color(0x35, 0x92, 0xC4))
+
+        val wrapper = object : JPanel(BorderLayout(0, 0)) {
+            override fun getBackground(): Color = replaceField.background
+        }
+        wrapper.isOpaque = true
+        wrapper.border = JBUI.Borders.customLine(borderColor, 1)
+
+        replaceField.border = JBUI.Borders.empty(2, 6)
+        replaceField.isOpaque = false
+
+        replaceField.addFocusListener(object : FocusAdapter() {
+            override fun focusGained(e: FocusEvent) {
+                wrapper.border = JBUI.Borders.customLine(focusColor, 1)
+                wrapper.repaint()
+            }
+            override fun focusLost(e: FocusEvent) {
+                wrapper.border = JBUI.Borders.customLine(borderColor, 1)
+                wrapper.repaint()
+            }
+        })
+
+        // Replace / Replace All 图标按钮
+        val replaceIconBtn = createIconActionButton(AllIcons.Actions.Replace, "Replace (Enter)")
+        val replaceAllIconBtn = createIconActionButton(AllIcons.Actions.Replace, "Replace All")
+
+        replaceIconBtn.addActionListener { triggerReplace() }
+        replaceAllIconBtn.addActionListener { triggerReplaceAll() }
+
+        val btnsPanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            isOpaque = false
+            border = JBUI.Borders.empty(2, 0, 2, 4)
+            add(replaceIconBtn)
+            add(Box.createHorizontalStrut(JBUI.scale(1)))
+            add(replaceAllIconBtn)
+        }
+
+        wrapper.add(replaceField, BorderLayout.CENTER)
+        wrapper.add(btnsPanel, BorderLayout.EAST)
+        return wrapper
+    }
+
+    private fun createIconActionButton(icon: Icon, tooltip: String): JButton {
+        return object : JButton(icon) {
+            init {
+                toolTipText = tooltip
+                isFocusable = false
+                isFocusPainted = false
+                isContentAreaFilled = false
+                isBorderPainted = false
+                isOpaque = false
+                isRolloverEnabled = true
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                val sz = JBUI.scale(22)
+                preferredSize = Dimension(sz, sz)
+                minimumSize = preferredSize
+                maximumSize = preferredSize
+            }
+
+            override fun paintComponent(g: Graphics) {
+                val g2 = g as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                if (model.isRollover) {
+                    g2.color = JBColor(Color(0, 0, 0, 20), Color(255, 255, 255, 25))
+                    g2.fillRoundRect(1, 1, width - 2, height - 2, JBUI.scale(4), JBUI.scale(4))
+                }
+                super.paintComponent(g)
+            }
+        }
+    }
+
+    /**
+     * 创建搜索选项切换按钮（Aa / Ab / .*）
      */
     private fun createOptionToggle(label: String, tooltip: String): JToggleButton {
         return object : JToggleButton() {
@@ -182,15 +324,11 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
                 val g2 = g as Graphics2D
                 g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
                 g2.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
-
                 val arc = JBUI.scale(4)
-
-                // 背景：选中 > 悬停 > 无
                 when {
                     isSelected -> {
                         g2.color = JBColor(Color(0, 0, 0, 30), Color(255, 255, 255, 40))
                         g2.fillRoundRect(0, 0, width, height, arc, arc)
-                        // 选中时底部加一条高亮线
                         g2.color = UIManager.getColor("Component.focusColor")
                             ?: JBColor(Color(0x3d, 0x98, 0xf5), Color(0x35, 0x92, 0xC4))
                         g2.fillRect(JBUI.scale(2), height - JBUI.scale(2), width - JBUI.scale(4), JBUI.scale(2))
@@ -200,15 +338,12 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
                         g2.fillRoundRect(0, 0, width, height, arc, arc)
                     }
                 }
-
-                // 文字颜色：选中时正常色，未选中时灰色
                 g2.color = if (isSelected) {
                     UIManager.getColor("Label.foreground") ?: JBColor.foreground()
                 } else {
                     UIManager.getColor("Label.disabledForeground") ?: JBColor.GRAY
                 }
                 g2.font = JBUI.Fonts.smallFont()
-
                 val fm = g2.fontMetrics
                 val x = (width - fm.stringWidth(label)) / 2
                 val y = (height + fm.ascent - fm.descent) / 2
@@ -218,59 +353,43 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private fun setupListeners() {
-        // 所有输入框回车触发搜索
         val enterKeyListener = object : KeyAdapter() {
             override fun keyPressed(e: KeyEvent) {
-                if (e.keyCode == KeyEvent.VK_ENTER) {
-                    triggerSearch()
-                }
+                if (e.keyCode == KeyEvent.VK_ENTER) triggerSearch()
             }
         }
-
         searchField.addKeyListener(enterKeyListener)
         replaceField.addKeyListener(enterKeyListener)
         includeField.addKeyListener(enterKeyListener)
         excludeField.addKeyListener(enterKeyListener)
 
+        toggleArrowButton.addActionListener {
+            toggleReplaceMode()
+        }
+
         replaceButton.addActionListener { triggerReplace() }
         replaceAllButton.addActionListener { triggerReplaceAll() }
     }
 
-    /**
-     * 切换替换模式
-     */
     fun toggleReplaceMode() {
         showReplaceMode = !showReplaceMode
-        updateReplaceVisibility()
-    }
-
-    private fun updateReplaceVisibility() {
-        // 找到 replacePanel 并更新可见性
-        val mainPanel = getComponent(0) as JPanel
-        val replacePanel = mainPanel.getComponent(1) as JPanel
-        replacePanel.isVisible = showReplaceMode
-        replaceButton.isVisible = showReplaceMode
-        replaceAllButton.isVisible = showReplaceMode
-
+        replaceRow.isVisible = showReplaceMode
+        toggleArrowButton.repaint()
+        if (showReplaceMode) replaceField.requestFocusInWindow()
         revalidate()
         repaint()
     }
 
     private fun triggerSearch() {
-        val options = buildSearchOptions()
-        onSearchTriggered?.invoke(options)
+        onSearchTriggered?.invoke(buildSearchOptions())
     }
 
     private fun triggerReplace() {
-        val options = buildSearchOptions()
-        val replaceText = replaceField.text
-        onReplaceTriggered?.invoke(options, replaceText)
+        onReplaceTriggered?.invoke(buildSearchOptions(), replaceField.text)
     }
 
     private fun triggerReplaceAll() {
-        val options = buildSearchOptions()
-        val replaceText = replaceField.text
-        onReplaceAllTriggered?.invoke(options, replaceText)
+        onReplaceAllTriggered?.invoke(buildSearchOptions(), replaceField.text)
     }
 
     private fun buildSearchOptions(): SearchOptions {
@@ -280,47 +399,25 @@ class SearchFormPanel(private val project: Project) : JPanel(BorderLayout()) {
             2 -> SearchScope.DIRECTORY
             else -> SearchScope.PROJECT
         }
-
-        val includePatterns = includeField.text
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-
-        val excludePatterns = excludeField.text
-            .split(",")
-            .map { it.trim() }
-            .filter { it.isNotEmpty() }
-
         return SearchOptions(
             query = searchField.text,
             matchCase = matchCaseToggle.isSelected,
             matchWholeWord = wholeWordToggle.isSelected,
             useRegex = regexToggle.isSelected,
             searchScope = scope,
-            includePatterns = includePatterns,
-            excludePatterns = excludePatterns
+            includePatterns = includeField.text.split(",").map { it.trim() }.filter { it.isNotEmpty() },
+            excludePatterns = excludeField.text.split(",").map { it.trim() }.filter { it.isNotEmpty() }
         )
     }
 
-    fun setOnSearchTriggered(callback: (SearchOptions) -> Unit) {
-        onSearchTriggered = callback
-    }
+    fun setOnSearchTriggered(callback: (SearchOptions) -> Unit) { onSearchTriggered = callback }
+    fun setOnReplaceTriggered(callback: (SearchOptions, String) -> Unit) { onReplaceTriggered = callback }
+    fun setOnReplaceAllTriggered(callback: (SearchOptions, String) -> Unit) { onReplaceAllTriggered = callback }
 
-    fun setOnReplaceTriggered(callback: (SearchOptions, String) -> Unit) {
-        onReplaceTriggered = callback
-    }
-
-    fun setOnReplaceAllTriggered(callback: (SearchOptions, String) -> Unit) {
-        onReplaceAllTriggered = callback
-    }
-
-    fun focusSearchField() {
-        searchField.requestFocusInWindow()
-    }
-
+    fun focusSearchField() { searchField.requestFocusInWindow() }
     fun getSearchQuery(): String = searchField.text
-
-    fun setSearchQuery(query: String) {
-        searchField.text = query
-    }
+    fun setSearchQuery(query: String) { searchField.text = query }
+    fun getReplaceText(): String = replaceField.text
+    fun buildCurrentSearchOptions(): SearchOptions = buildSearchOptions()
+    fun invokeSearch() { onSearchTriggered?.invoke(buildSearchOptions()) }
 }
