@@ -7,6 +7,7 @@ import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.VirtualFile
+import java.util.regex.Matcher
 import java.util.regex.Pattern
 
 /**
@@ -38,7 +39,12 @@ class ReplaceService(private val project: Project) {
                 val matcher = pattern.matcher(line)
 
                 if (matcher.find()) {
-                    val newLine = matcher.replaceFirst(replaceText)
+                    val actualReplace = if (searchOptions.preserveCase) {
+                        applyPreserveCase(matcher.group(), replaceText)
+                    } else {
+                        replaceText
+                    }
+                    val newLine = matcher.replaceFirst(Matcher.quoteReplacement(actualReplace))
                     lines[lineNumber - 1] = newLine
 
                     val newContent = lines.joinToString("\n")
@@ -76,7 +82,12 @@ class ReplaceService(private val project: Project) {
                 val result = StringBuffer()
 
                 while (matcher.find()) {
-                    matcher.appendReplacement(result, replaceText)
+                    val actualReplace = if (searchOptions.preserveCase) {
+                        applyPreserveCase(matcher.group(), replaceText)
+                    } else {
+                        replaceText
+                    }
+                    matcher.appendReplacement(result, Matcher.quoteReplacement(actualReplace))
                     count++
                 }
                 matcher.appendTail(result)
@@ -115,6 +126,29 @@ class ReplaceService(private val project: Project) {
         }
 
         return results
+    }
+
+    /**
+     * Apply preserve-case transformation: match the casing pattern of the original
+     * text and apply it to the replacement. Follows VS Code's preserve case rules:
+     * - ALL UPPER → replacement becomes ALL UPPER
+     * - all lower → replacement becomes all lower
+     * - First Letter Upper → replacement becomes First Letter Upper
+     * - Otherwise → replacement used as-is
+     */
+    private fun applyPreserveCase(matched: String, replacement: String): String {
+        if (matched.isEmpty() || replacement.isEmpty()) return replacement
+
+        val allUpper = matched.all { !it.isLetter() || it.isUpperCase() } && matched.any { it.isLetter() }
+        val allLower = matched.all { !it.isLetter() || it.isLowerCase() } && matched.any { it.isLetter() }
+        val firstUpper = matched[0].isUpperCase() && matched.drop(1).all { !it.isLetter() || it.isLowerCase() } && matched.any { it.isLetter() }
+
+        return when {
+            allUpper -> replacement.uppercase()
+            allLower -> replacement.lowercase()
+            firstUpper -> replacement.replaceFirstChar { it.uppercaseChar() }
+            else -> replacement
+        }
     }
 
     /**
