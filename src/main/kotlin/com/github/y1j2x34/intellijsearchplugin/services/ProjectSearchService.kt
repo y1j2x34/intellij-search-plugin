@@ -136,7 +136,8 @@ class ProjectSearchService(private val project: Project) {
         val matcher = pattern.matcher(line)
 
         while (matcher.find()) {
-            ranges.add(matcher.start() until matcher.end())
+            // Use inclusive range: start..end-1
+            ranges.add(matcher.start()..matcher.end() - 1)
         }
 
         return ranges

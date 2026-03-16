@@ -63,8 +63,17 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
     private fun setupUI() {
         border = JBUI.Borders.empty(8)
 
-        summaryLabel.border = JBUI.Borders.empty(4)
-        add(summaryLabel, BorderLayout.NORTH)
+        // Header panel with summary label and collapse/expand button
+        val headerPanel = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(4)
+
+            add(summaryLabel, BorderLayout.WEST)
+
+            val collapseExpandBtn = createCollapseExpandButton()
+            add(collapseExpandBtn, BorderLayout.EAST)
+        }
+        add(headerPanel, BorderLayout.NORTH)
 
         resultTree.isRootVisible = false
         resultTree.showsRootHandles = true
@@ -187,16 +196,77 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
         }
     }
 
-    private fun handleNodeDoubleClick(node: DefaultMutableTreeNode) {
-        when (val userObject = node.userObject) {
-            is FileResultNode -> openFile(userObject.file, 0)
-            is LineMatchNode -> openFile(userObject.file, userObject.lineMatch.lineNumber)
+    private fun collapseAllNodes() {
+        for (i in resultTree.rowCount - 1 downTo 0) {
+            resultTree.collapseRow(i)
         }
     }
 
-    private fun openFile(file: VirtualFile, lineNumber: Int) {
+    private fun createCollapseExpandButton(): JButton {
+        return object : JButton() {
+            private var isExpanded = true
+
+            init {
+                isFocusable = false
+                isFocusPainted = false
+                isContentAreaFilled = false
+                isBorderPainted = false
+                isOpaque = false
+                isRolloverEnabled = true
+                cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+                toolTipText = "Collapse All"
+                val sz = JBUI.scale(20)
+                preferredSize = Dimension(sz, sz)
+                minimumSize = Dimension(sz, sz)
+                maximumSize = Dimension(sz, sz)
+
+                addActionListener {
+                    isExpanded = !isExpanded
+                    if (isExpanded) {
+                        expandAllNodes()
+                        toolTipText = "Collapse All"
+                    } else {
+                        collapseAllNodes()
+                        toolTipText = "Expand All"
+                    }
+                    repaint()
+                }
+            }
+
+            override fun paintComponent(g: Graphics) {
+                val g2 = g as Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+
+                if (model.isRollover) {
+                    g2.color = UIManager.getColor("ActionButton.hoverBackground")
+                        ?: Color(0, 0, 0, 20)
+                    g2.fillRoundRect(1, 1, width - 2, height - 2, JBUI.scale(4), JBUI.scale(4))
+                }
+
+                val icon = if (isExpanded) AllIcons.Actions.Collapseall else AllIcons.Actions.Expandall
+                icon.paintIcon(this, g2, (width - icon.iconWidth) / 2, (height - icon.iconHeight) / 2)
+            }
+        }
+    }
+
+    private fun handleNodeDoubleClick(node: DefaultMutableTreeNode) {
+        when (val userObject = node.userObject) {
+            is FileResultNode -> openFile(userObject.file, 0, 0)
+            is LineMatchNode -> {
+                // Navigate to the first match position in the line
+                val column = if (userObject.lineMatch.matchRanges.isNotEmpty()) {
+                    userObject.lineMatch.matchRanges[0].first
+                } else {
+                    0
+                }
+                openFile(userObject.file, userObject.lineMatch.lineNumber, column)
+            }
+        }
+    }
+
+    private fun openFile(file: VirtualFile, lineNumber: Int, column: Int) {
         val descriptor = if (lineNumber > 0) {
-            OpenFileDescriptor(project, file, lineNumber - 1, 0)
+            OpenFileDescriptor(project, file, lineNumber - 1, column)
         } else {
             OpenFileDescriptor(project, file)
         }
@@ -237,15 +307,33 @@ class SearchResultsPanel(private val project: Project) : JPanel(BorderLayout()) 
                 is LineMatchNode -> {
                     icon = null
                     append("  ${userObject.lineMatch.lineNumber}: ", SimpleTextAttributes.GRAYED_ATTRIBUTES)
-                    val line = userObject.lineMatch.lineContent.trim()
-                    val ranges = userObject.lineMatch.matchRanges
+                    val originalLine = userObject.lineMatch.lineContent
+                    val trimStart = originalLine.indexOfFirst { !it.isWhitespace() }
+                    val line = originalLine.trim()
+
+                    // Adjust ranges to account for trimmed leading whitespace
+                    val adjustedRanges = if (trimStart > 0) {
+                        userObject.lineMatch.matchRanges.mapNotNull { range ->
+                            val newFirst = range.first - trimStart
+                            val newLast = range.last - trimStart
+                            // Only include ranges that are still valid after trimming
+                            if (newFirst >= 0 && newLast < line.length) {
+                                newFirst..newLast
+                            } else null
+                        }
+                    } else {
+                        userObject.lineMatch.matchRanges
+                    }
+
                     var lastIndex = 0
-                    ranges.forEach { range ->
+                    adjustedRanges.forEach { range ->
                         if (range.first > lastIndex) {
                             append(line.substring(lastIndex, range.first), SimpleTextAttributes.REGULAR_ATTRIBUTES)
                         }
-                        append(line.substring(range.first, range.last), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
-                        lastIndex = range.last
+                        // range.last is inclusive, so we need to add 1 for substring's exclusive end
+                        val endIndex = (range.last + 1).coerceAtMost(line.length)
+                        append(line.substring(range.first, endIndex), SimpleTextAttributes.REGULAR_BOLD_ATTRIBUTES)
+                        lastIndex = endIndex
                     }
                     if (lastIndex < line.length) {
                         append(line.substring(lastIndex), SimpleTextAttributes.REGULAR_ATTRIBUTES)
