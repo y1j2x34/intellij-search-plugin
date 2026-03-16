@@ -13,7 +13,7 @@ class OpenSearchToolWindowAction : AnAction(), DumbAware {
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val toolWindowManager = ToolWindowManager.getInstance(project)
-        val toolWindow = toolWindowManager.getToolWindow("Project Search") ?: return
+        val toolWindow = toolWindowManager.getToolWindow("VSCode Search Panel") ?: return
 
         toolWindow.show {
             // 工具窗口打开后，聚焦搜索输入框
