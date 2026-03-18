@@ -6,8 +6,9 @@ import com.github.y1j2x34.intellijsearchplugin.services.ReplaceService
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.actionSystem.DefaultActionGroup
-import com.intellij.openapi.actionSystem.impl.ActionToolbarImpl
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
@@ -43,11 +44,11 @@ class SearchToolWindowPanel(private val project: Project) : JPanel(BorderLayout(
         add(searchResultsPanel, BorderLayout.CENTER)
     }
 
-    private fun createToolbar(): ActionToolbarImpl {
+    private fun createToolbar(): ActionToolbar {
         val actionGroup = DefaultActionGroup().apply {
             add(ClearResultsAction())
         }
-        return ActionToolbarImpl("SearchToolWindow", actionGroup, true).apply {
+        return ActionManager.getInstance().createActionToolbar("SearchToolWindow", actionGroup, true).apply {
             setTargetComponent(this@SearchToolWindowPanel)
         }
     }

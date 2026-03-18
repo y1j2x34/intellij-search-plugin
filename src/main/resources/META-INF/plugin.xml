@@ -32,8 +32,4 @@
         </action>
     </actions>
 
-    <applicationListeners>
-        <listener class="com.github.y1j2x34.intellijsearchplugin.listeners.MyProjectManagerListener"
-                  topic="com.intellij.openapi.project.ProjectManagerListener"/>
-    </applicationListeners>
 </idea-plugin>
