@@ -1,6 +1,8 @@
 # VSCode Search Panel
 
+<!-- Plugin description -->
 A VS Code-style search and replace panel for JetBrains IDEs.
+<!-- Plugin description end -->
 
 ![IntelliJ IDEA](https://img.shields.io/badge/IntelliJ_IDEA-2025.2+-blue?logo=intellijidea&logoColor=white)
 ![Version](https://img.shields.io/badge/version-2.4.1-green)
