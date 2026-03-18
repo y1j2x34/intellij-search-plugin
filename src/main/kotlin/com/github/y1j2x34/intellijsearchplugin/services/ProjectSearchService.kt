@@ -8,6 +8,7 @@ import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.roots.ProjectFileIndex
 import com.intellij.openapi.vfs.VirtualFile
 import java.util.regex.Pattern
@@ -90,15 +91,27 @@ class ProjectSearchService(private val project: Project) {
         indicator.text = "Collecting files..."
         val allFiles = mutableListOf<VirtualFile>()
         ReadAction.run<Exception> {
-            ProjectFileIndex.getInstance(project).iterateContent { file ->
-                if (!indicator.isCanceled && !file.isDirectory &&
-                    isTextFile(file) &&
-                    matchesIncludePatterns(file, options.includePatterns) &&
-                    !matchesExcludePatterns(file, options.excludePatterns)
-                ) {
-                    allFiles.add(file)
+            if (options.searchOnlyInOpenEditors) {
+                FileEditorManager.getInstance(project).openFiles.forEach { file ->
+                    if (!indicator.isCanceled && !file.isDirectory &&
+                        isTextFile(file) &&
+                        matchesIncludePatterns(file, options.includePatterns) &&
+                        !matchesExcludePatterns(file, options.excludePatterns)
+                    ) {
+                        allFiles.add(file)
+                    }
                 }
-                true
+            } else {
+                ProjectFileIndex.getInstance(project).iterateContent { file ->
+                    if (!indicator.isCanceled && !file.isDirectory &&
+                        isTextFile(file) &&
+                        matchesIncludePatterns(file, options.includePatterns) &&
+                        !matchesExcludePatterns(file, options.excludePatterns)
+                    ) {
+                        allFiles.add(file)
+                    }
+                    true
+                }
             }
         }
         return allFiles
