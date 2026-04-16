@@ -2,7 +2,7 @@ package com.github.y1j2x34.intellijsearchplugin.services
 
 import com.github.y1j2x34.intellijsearchplugin.model.*
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.application.ReadAction
+import com.intellij.openapi.application.runReadAction
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
@@ -52,7 +52,7 @@ class ProjectSearchService(private val project: Project) {
                         indicator.fraction = index.toDouble() / files.size
                         indicator.text2 = "Searching in ${file.name}"
 
-                        val fileResult = ReadAction.compute<FileSearchResult?, Exception> {
+                        val fileResult = runReadAction<FileSearchResult?> {
                             searchInFile(file, pattern)
                         }
                         if (fileResult != null && fileResult.matches.isNotEmpty()) {
@@ -90,7 +90,7 @@ class ProjectSearchService(private val project: Project) {
     private fun getFilesToSearch(options: SearchOptions, indicator: ProgressIndicator): List<VirtualFile> {
         indicator.text = "Collecting files..."
         val allFiles = mutableListOf<VirtualFile>()
-        ReadAction.run<Exception> {
+        runReadAction {
             if (options.searchOnlyInOpenEditors) {
                 FileEditorManager.getInstance(project).openFiles.forEach { file ->
                     if (!indicator.isCanceled && !file.isDirectory &&

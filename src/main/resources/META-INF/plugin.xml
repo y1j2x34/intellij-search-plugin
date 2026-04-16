@@ -8,8 +8,6 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <!-- Services -->
-        <applicationService serviceImplementation="com.github.y1j2x34.intellijsearchplugin.services.MyApplicationService"/>
-        <projectService serviceImplementation="com.github.y1j2x34.intellijsearchplugin.services.MyProjectService"/>
         <projectService serviceImplementation="com.github.y1j2x34.intellijsearchplugin.services.ProjectSearchService"/>
         <projectService serviceImplementation="com.github.y1j2x34.intellijsearchplugin.services.ReplaceService"/>
 
