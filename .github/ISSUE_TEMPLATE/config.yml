@@ -1,7 +1,7 @@
 blank_issues_enabled: true
 contact_links:
   - name: Documentation
-    url: https://github.com/JetBrains/intellij-platform-plugin-template
+    url: https://github.com/y1j2x34/intellij-search-plugin
     about: Check the README file in the first place.
   - name: Getting Help
     url: https://plugins.jetbrains.com/docs/intellij/getting-help.html

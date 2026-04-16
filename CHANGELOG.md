@@ -2,15 +2,19 @@
 
 # VSCode Search Panel Changelog
 
+## [Unreleased]
+
 ## [1.0.1]
 
 ### Fixed
+
 - Fixed compatibility issues in SearchToolWindowPanel
 - Removed unused services and updated ReadAction API for compatibility
 
 ## [1.0.0]
 
 ### Added
+
 - VS Code-style search and replace tool window panel for JetBrains IDEs
 - Full-text search across project files with real-time streaming results
 - Search and replace functionality with confirmation dialogs
@@ -33,3 +37,6 @@
 - EDT thread safety for UI updates
 - Optimized file iteration using `ProjectFileIndex`
 
+[Unreleased]: https://github.com/y1j2x34/vscode-search-panel/compare/1.0.1...HEAD
+[1.0.1]: https://github.com/y1j2x34/vscode-search-panel/compare/1.0.0...1.0.1
+[1.0.0]: https://github.com/y1j2x34/vscode-search-panel/commits/1.0.0
