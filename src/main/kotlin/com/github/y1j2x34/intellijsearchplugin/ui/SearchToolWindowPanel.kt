@@ -48,8 +48,12 @@ class SearchToolWindowPanel(private val project: Project) : JPanel(BorderLayout(
         val actionGroup = DefaultActionGroup().apply {
             add(ClearResultsAction())
         }
-        return ActionManager.getInstance().createActionToolbar("SearchToolWindow", actionGroup, true).apply {
-            setTargetComponent(this@SearchToolWindowPanel)
+        return ActionManager.getInstance().createActionToolbar(
+            "SearchToolWindow",
+            actionGroup,
+            true
+        ).apply {
+            targetComponent = this@SearchToolWindowPanel
         }
     }
 
