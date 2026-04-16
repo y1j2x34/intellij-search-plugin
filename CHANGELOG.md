@@ -2,6 +2,12 @@
 
 # VSCode Search Panel Changelog
 
+## [1.0.1]
+
+### Fixed
+- Fixed compatibility issues in SearchToolWindowPanel
+- Removed unused services and updated ReadAction API for compatibility
+
 ## [1.0.0]
 
 ### Added
